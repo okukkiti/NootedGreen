@@ -1,0 +1,38 @@
+workflows:
+  nootedgreen-tgl:
+    name: NootedGreen for Tiger Lake
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      xcode: latest
+    scripts:
+      - name: Build NootedGreen.kext (Debug and Release)
+        script: |
+          set -eo pipefail
+          for cfg in Debug Release; do
+            xcodebuild -project NootedGreen.xcodeproj -scheme NootedGreen \
+              -configuration "$cfg" -destination 'generic/platform=macOS' \
+              ARCHS=x86_64 ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO \
+              CONFIGURATION_BUILD_DIR="$CM_BUILD_DIR/out/NootedGreen-$cfg" build
+          done
+      - name: Build HookCase.kext for Tiger Lake (0x44470)
+        script: |
+          set -eo pipefail
+          f=HookCase-master/HookCase/HookCase.cpp
+          sed -i '' 's/readReg32(0x1638a0)/readReg32(0x44470)/g' "$f"
+          test "$(grep -c 'readReg32(0x44470)' "$f")" -eq 2
+          xcodebuild -project HookCase-master/HookCase.xcodeproj -scheme HookCase \
+            -configuration Release -destination 'generic/platform=macOS' \
+            ARCHS=x86_64 ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO \
+            CONFIGURATION_BUILD_DIR="$CM_BUILD_DIR/out/HookCase-TGL" build
+      - name: Zip the kexts
+        script: |
+          set -eo pipefail
+          cd "$CM_BUILD_DIR/out"
+          mkdir -p NootedGreen-TGL/Debug NootedGreen-TGL/Release
+          cp -R NootedGreen-Debug/NootedGreen.kext NootedGreen-TGL/Debug/
+          cp -R NootedGreen-Release/NootedGreen.kext NootedGreen-TGL/Release/
+          cp -R HookCase-TGL/HookCase.kext NootedGreen-TGL/
+          ditto -c -k --keepParent NootedGreen-TGL NootedGreen-TGL.zip
+    artifacts:
+      - out/NootedGreen-TGL.zip
