@@ -1,0 +1,60 @@
+name: Build NootedGreen for Tiger Lake
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Build NootedGreen.kext (Debug and Release)
+        run: |
+          set -eo pipefail
+          for cfg in Debug Release; do
+            xcodebuild -project NootedGreen.xcodeproj -scheme NootedGreen \
+              -configuration "$cfg" -destination 'generic/platform=macOS' \
+              ARCHS=x86_64 ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO \
+              CONFIGURATION_BUILD_DIR="$GITHUB_WORKSPACE/out/NootedGreen-$cfg" \
+              build
+          done
+
+      - name: Set HookCase port register for Tiger Lake (0x1638a0 to 0x44470)
+        run: |
+          set -eo pipefail
+          f=HookCase-master/HookCase/HookCase.cpp
+          sed -i '' 's/readReg32(0x1638a0)/readReg32(0x44470)/g' "$f"
+          n=$(grep -c 'readReg32(0x44470)' "$f")
+          echo "Lines using 0x44470: $n"
+          test "$n" -eq 2
+
+      - name: Build HookCase.kext (Release)
+        run: |
+          set -eo pipefail
+          xcodebuild -project HookCase-master/HookCase.xcodeproj -scheme HookCase \
+            -configuration Release -destination 'generic/platform=macOS' \
+            ARCHS=x86_64 ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO \
+            CONFIGURATION_BUILD_DIR="$GITHUB_WORKSPACE/out/HookCase-TGL" \
+            build
+
+      - name: List build output
+        run: find out -maxdepth 3 | sort
+
+      - name: Upload kexts
+        uses: actions/upload-artifact@v4
+        with:
+          name: NootedGreen-TGL
+          path: |
+            out/NootedGreen-Debug/NootedGreen.kext
+            out/NootedGreen-Release/NootedGreen.kext
+            out/HookCase-TGL/HookCase.kext
+          if-no-files-found: error
