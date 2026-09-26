@@ -19,8 +19,13 @@ workflows:
         script: |
           set -eo pipefail
           f=HookCase-master/HookCase/HookCase.cpp
+          # Tiger Lake hotplug register
           sed -i '' 's/readReg32(0x1638a0)/readReg32(0x44470)/g' "$f"
           test "$(grep -c 'readReg32(0x44470)' "$f")" -eq 2
+          # Newer SDKs make lck_rw_type_t an enum, so plain 1 and 2 no longer compile
+          sed -i '' 's/\(lck_rw_try_lock(&(map_local->lock), \)2)/\1LCK_RW_TYPE_EXCLUSIVE)/' "$f"
+          sed -i '' 's/\(lck_rw_try_lock(&(map_local->lock), \)1)/\1LCK_RW_TYPE_SHARED)/' "$f"
+          test "$(grep -c 'lck_rw_try_lock(&(map_local->lock), LCK_RW_TYPE_' "$f")" -eq 2
           xcodebuild -project HookCase-master/HookCase.xcodeproj -scheme HookCase \
             -configuration Release -destination 'generic/platform=macOS' \
             ARCHS=x86_64 ONLY_ACTIVE_ARCH=NO CODE_SIGNING_ALLOWED=NO \
